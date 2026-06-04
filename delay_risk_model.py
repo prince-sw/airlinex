@@ -58,19 +58,19 @@ FEATURE_COLS = [
     "late_aircraft_delay_i",
 
     # Turnaround features
+    # turnaround_slack_min, is_tight_turnaround, is_negative_available_turnaround,
+    # is_actually_negative_turnaround are all linear/threshold derivations of the two
+    # continuous columns below; CatBoost learns those splits directly from the parent.
+    # distance_group_j is a binned version of distance_j (already present).
+    # security_delay_i has near-zero importance (~0.007) across all models.
+    # estimated_min_turnaround_min is a zero-variance constant.
     "scheduled_turnaround_min",
     "actual_available_turnaround_min",
-    # estimated_min_turnaround_min is a hardcoded constant (35) and is excluded to avoid zero-variance features
-    "turnaround_slack_min",
     "turnaround_pressure_min",
-    "is_tight_turnaround",
-    "is_negative_available_turnaround",
-    "is_actually_negative_turnaround",
 
     # Flight size/distance context
     "distance_i",
     "distance_j",
-    "distance_group_j",
     "crs_elapsed_time_i",
     "crs_elapsed_time_j",
 ]
@@ -179,10 +179,9 @@ print("\nBaseline rule performance")
 print("=========================")
 
 # Simple rule:
-# If actual available turnaround is less than estimated minimum turnaround, predict delay risk.
+# If actual available turnaround is less than minimum turnaround (35 min), predict delay risk.
 baseline_pred = (
-    test_df["actual_available_turnaround_min"]
-    < test_df["estimated_min_turnaround_min"]
+    test_df["actual_available_turnaround_min"] < 35
 ).astype(int)
 
 for target in TARGET_COLS:
@@ -230,8 +229,7 @@ for target in TARGET_COLS:
     y_train = train_df[target]
     y_test = test_df[target]
 
-    positive_rate = y_train.mean()
-    print(f"Train positive rate: {positive_rate:.4f}")
+    print(f"Train positive rate: {y_train.mean():.4f}")
     print(f"Test positive rate:  {y_test.mean():.4f}")
 
     # Handles imbalance automatically using class weights

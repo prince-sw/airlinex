@@ -242,8 +242,11 @@ print("Building aircraft rotation pairs...")
 
 df = df.sort_values(["TAIL_NUM", "sched_departure_dt"]).copy()
 
+# Only carry columns that are actually used in output features or needed for pairing logic.
+# Columns like YEAR, DEP_DELAY, DEP_DEL15, ARR_DELAY, ARR_DEL15, ACTUAL_ELAPSED_TIME,
+# AIR_TIME, CRS_DEP_TIME, DEP_TIME, CRS_ARR_TIME, ARR_TIME are either superseded by
+# the datetime columns or never mapped to any output feature.
 base_cols = [
-    "YEAR",
     "MONTH",
     "DAY_OF_MONTH",
     "DAY_OF_WEEK",
@@ -252,19 +255,9 @@ base_cols = [
     "TAIL_NUM",
     "ORIGIN",
     "DEST",
-    "CRS_DEP_TIME",
-    "DEP_TIME",
-    "DEP_DELAY",
     "DEP_DELAY_NEW",
-    "DEP_DEL15",
-    "CRS_ARR_TIME",
-    "ARR_TIME",
-    "ARR_DELAY",
     "ARR_DELAY_NEW",
-    "ARR_DEL15",
     "CRS_ELAPSED_TIME",
-    "ACTUAL_ELAPSED_TIME",
-    "AIR_TIME",
     "DISTANCE",
     "DISTANCE_GROUP",
     "CARRIER_DELAY",
@@ -278,10 +271,10 @@ base_cols = [
     "actual_arrival_dt",
 ]
 
+# df is already sorted by [TAIL_NUM, sched_departure_dt] from line 243.
 df_small = df[base_cols].copy()
 
 # Current flight = i
-df_small = df_small.sort_values(["TAIL_NUM", "sched_departure_dt"])
 current = df_small.add_suffix("_i")
 
 # Next same-aircraft flight = j (grouped by tail number to avoid bleed)
@@ -304,10 +297,7 @@ pairs = pairs[pairs["FL_DATE_j"].notna()].copy()
 
 print("Filtering valid aircraft rotations...")
 
-# Valid aircraft rotation means previous destination equals next origin
-pairs["same_airport_connection"] = (pairs["DEST_i"] == pairs["ORIGIN_j"]).astype(int)
-
-pairs = pairs[pairs["same_airport_connection"] == 1].copy()
+pairs = pairs[pairs["DEST_i"] == pairs["ORIGIN_j"]].copy()
 
 # Scheduled turnaround: next scheduled departure - previous scheduled arrival
 pairs["scheduled_turnaround_min"] = (
@@ -334,47 +324,47 @@ print(f"Valid flight-pair rows: {len(pairs):,}")
 
 print("Engineering features...")
 
-# Upstream flight i actual delay info.
-# Safe because flight i has already happened.
-pairs["upstream_arr_delay_min"] = pairs["ARR_DELAY_NEW_i"]
-pairs["upstream_dep_delay_min"] = pairs["DEP_DELAY_NEW_i"]
+# Rename raw BTS columns to clean output names in a single pass.
+# Upstream delay causes are taken strictly from flight i (not j) to avoid leakage.
+pairs = pairs.rename(columns={
+    # Upstream delay totals
+    "ARR_DELAY_NEW_i":        "upstream_arr_delay_min",
+    "DEP_DELAY_NEW_i":        "upstream_dep_delay_min",
+    # Upstream delay causes
+    "CARRIER_DELAY_i":        "carrier_delay_i",
+    "WEATHER_DELAY_i":        "weather_delay_i",
+    "NAS_DELAY_i":            "nas_delay_i",
+    "SECURITY_DELAY_i":       "security_delay_i",
+    "LATE_AIRCRAFT_DELAY_i":  "late_aircraft_delay_i",
+    # Route / context
+    "OP_UNIQUE_CARRIER_i":    "carrier",
+    "ORIGIN_i":               "origin_i",
+    "DEST_i":                 "dest_i",
+    "ORIGIN_j":               "origin_j",
+    "DEST_j":                 "dest_j",
+    # Calendar
+    "MONTH_i":                "month",
+    "DAY_OF_MONTH_i":         "day_of_month",
+    "DAY_OF_WEEK_i":          "day_of_week",
+    # Distance / elapsed time
+    "DISTANCE_i":             "distance_i",
+    "DISTANCE_j":             "distance_j",
+    "DISTANCE_GROUP_j":       "distance_group_j",
+    "CRS_ELAPSED_TIME_i":     "crs_elapsed_time_i",
+    "CRS_ELAPSED_TIME_j":     "crs_elapsed_time_j",
+})
 
-# Feature engineer upstream delay causes strictly for i (not j) to avoid leakage
-pairs["carrier_delay_i"] = pairs["CARRIER_DELAY_i"]
-pairs["weather_delay_i"] = pairs["WEATHER_DELAY_i"]
-pairs["nas_delay_i"] = pairs["NAS_DELAY_i"]
-pairs["security_delay_i"] = pairs["SECURITY_DELAY_i"]
-pairs["late_aircraft_delay_i"] = pairs["LATE_AIRCRAFT_DELAY_i"]
-
-# Downstream scheduled/static information.
-pairs["carrier"] = pairs["OP_UNIQUE_CARRIER_i"]
-pairs["origin_i"] = pairs["ORIGIN_i"]
-pairs["dest_i"] = pairs["DEST_i"]
-pairs["origin_j"] = pairs["ORIGIN_j"]
-pairs["dest_j"] = pairs["DEST_j"]
-
-pairs["route_i"] = pairs["ORIGIN_i"].astype(str) + "-" + pairs["DEST_i"].astype(str)
-pairs["route_j"] = pairs["ORIGIN_j"].astype(str) + "-" + pairs["DEST_j"].astype(str)
-
-pairs["month"] = pairs["MONTH_i"]
-pairs["day_of_month"] = pairs["DAY_OF_MONTH_i"]
-pairs["day_of_week"] = pairs["DAY_OF_WEEK_i"]
+pairs["route_i"] = pairs["origin_i"].astype(str) + "-" + pairs["dest_i"].astype(str)
+pairs["route_j"] = pairs["origin_j"].astype(str) + "-" + pairs["dest_j"].astype(str)
 
 pairs["next_dep_hour"] = pairs["sched_departure_dt_j"].dt.hour
 pairs["next_arr_hour"] = pairs["sched_arrival_dt_j"].dt.hour
 
-pairs["distance_i"] = pairs["DISTANCE_i"]
-pairs["distance_j"] = pairs["DISTANCE_j"]
-pairs["distance_group_j"] = pairs["DISTANCE_GROUP_j"]
-
-pairs["crs_elapsed_time_i"] = pairs["CRS_ELAPSED_TIME_i"]
-pairs["crs_elapsed_time_j"] = pairs["CRS_ELAPSED_TIME_j"]
-
 # Turnaround pressure features
-pairs["estimated_min_turnaround_min"] = MIN_TURNAROUND_MINUTES
-
+# turnaround_slack_min is kept as an intermediate to compute turnaround_pressure_min
+# but is not exported to feature_cols (it's a linear shift of scheduled_turnaround_min).
 pairs["turnaround_slack_min"] = (
-    pairs["scheduled_turnaround_min"] - pairs["estimated_min_turnaround_min"]
+    pairs["scheduled_turnaround_min"] - MIN_TURNAROUND_MINUTES
 )
 
 pairs["turnaround_pressure_min"] = (
@@ -443,14 +433,13 @@ feature_cols = [
     "late_aircraft_delay_i",
 
     # Turnaround features
+    # turnaround_slack_min, is_tight_turnaround, is_negative_available_turnaround,
+    # is_actually_negative_turnaround are all derivable from the two continuous columns
+    # below; CatBoost learns those splits directly. estimated_min_turnaround_min is a
+    # zero-variance constant and is excluded.
     "scheduled_turnaround_min",
     "actual_available_turnaround_min",
-    "estimated_min_turnaround_min",
-    "turnaround_slack_min",
     "turnaround_pressure_min",
-    "is_tight_turnaround",
-    "is_negative_available_turnaround",
-    "is_actually_negative_turnaround",
 
     # Scheduled/static flight features
     "distance_i",
@@ -468,10 +457,6 @@ debug_cols = [
     "downstream_dep_delay_min",
     "DEP_DELAY_NEW_j",
     "ARR_DELAY_NEW_j",
-    "CRS_DEP_TIME_j",
-    "DEP_TIME_j",
-    "CRS_ARR_TIME_j",
-    "ARR_TIME_j",
 ]
 
 final_cols = feature_cols + target_cols + debug_cols
