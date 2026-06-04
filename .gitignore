@@ -1,0 +1,8 @@
+# Large datasets and tables
+*.csv
+datasets/
+catboost_info/
+__pycache__/
+
+# Model binaries
+*.cbm
