@@ -113,8 +113,14 @@ print(f"Raw columns: {len(df.columns):,}")
 # REQUIRED COLUMNS
 # =========================
 
+# Only require columns that are actually used:
+# - BTS time columns (CRS_DEP_TIME, DEP_TIME, CRS_ARR_TIME, ARR_TIME) needed for datetime creation.
+# - CANCELLED, DIVERTED needed for row filtering.
+# - DEP_DELAY_NEW, ARR_DELAY_NEW are the clamped (>= 0) delay signals used as features.
+# - Dropped: YEAR (constant), DEP_DELAY/ARR_DELAY (raw, superseded by *_NEW variants),
+#   DEP_DEL15/ARR_DEL15 (coarser binary versions of the same), ACTUAL_ELAPSED_TIME,
+#   AIR_TIME (both correlated with CRS_ELAPSED_TIME and distance features).
 required_cols = [
-    "YEAR",
     "MONTH",
     "DAY_OF_MONTH",
     "DAY_OF_WEEK",
@@ -125,19 +131,13 @@ required_cols = [
     "DEST",
     "CRS_DEP_TIME",
     "DEP_TIME",
-    "DEP_DELAY",
     "DEP_DELAY_NEW",
-    "DEP_DEL15",
     "CRS_ARR_TIME",
     "ARR_TIME",
-    "ARR_DELAY",
     "ARR_DELAY_NEW",
-    "ARR_DEL15",
     "CANCELLED",
     "DIVERTED",
     "CRS_ELAPSED_TIME",
-    "ACTUAL_ELAPSED_TIME",
-    "AIR_TIME",
     "DISTANCE",
     "DISTANCE_GROUP",
     "CARRIER_DELAY",
@@ -157,25 +157,18 @@ require_columns(df, required_cols)
 print("Cleaning rows...")
 
 numeric_cols = [
-    "YEAR",
     "MONTH",
     "DAY_OF_MONTH",
     "DAY_OF_WEEK",
     "CRS_DEP_TIME",
     "DEP_TIME",
-    "DEP_DELAY",
     "DEP_DELAY_NEW",
-    "DEP_DEL15",
     "CRS_ARR_TIME",
     "ARR_TIME",
-    "ARR_DELAY",
     "ARR_DELAY_NEW",
-    "ARR_DEL15",
     "CANCELLED",
     "DIVERTED",
     "CRS_ELAPSED_TIME",
-    "ACTUAL_ELAPSED_TIME",
-    "AIR_TIME",
     "DISTANCE",
     "DISTANCE_GROUP",
     "CARRIER_DELAY",
@@ -371,17 +364,9 @@ pairs["turnaround_pressure_min"] = (
     pairs["upstream_arr_delay_min"] - pairs["turnaround_slack_min"]
 )
 
-pairs["is_tight_turnaround"] = (
-    pairs["scheduled_turnaround_min"] < MIN_TURNAROUND_MINUTES
-).astype(int)
-
-pairs["is_negative_available_turnaround"] = (
-    pairs["actual_available_turnaround_min"] < MIN_TURNAROUND_MINUTES
-).astype(int)
-
-pairs["is_actually_negative_turnaround"] = (
-    pairs["actual_available_turnaround_min"] < 0
-).astype(int)
+# Note: is_tight_turnaround, is_negative_available_turnaround, is_actually_negative_turnaround
+# were previously computed here but are not exported or used by the model.
+# CatBoost learns those threshold splits directly from the continuous parent columns.
 
 
 # =========================
@@ -442,9 +427,9 @@ feature_cols = [
     "turnaround_pressure_min",
 
     # Scheduled/static flight features
+    # distance_group_j excluded: it's a binned version of distance_j (already present).
     "distance_i",
     "distance_j",
-    "distance_group_j",
     "crs_elapsed_time_i",
     "crs_elapsed_time_j",
 ]
