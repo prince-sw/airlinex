@@ -25,9 +25,7 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 TARGET_COLS = [
     "target_delay_gt_15",
-    "target_delay_gt_30",
     "target_delay_gt_45",
-    "target_delay_gt_60",
     "target_delay_gt_90",
 ]
 
@@ -316,9 +314,7 @@ print("\nApplying monotonic correction to risk profile...")
 
 prob_cols = [
     "prob_delay_gt_15",
-    "prob_delay_gt_30",
     "prob_delay_gt_45",
-    "prob_delay_gt_60",
     "prob_delay_gt_90",
 ]
 

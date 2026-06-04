@@ -379,7 +379,7 @@ print("Creating target labels...")
 # This is target/debug only, not predictor.
 pairs["downstream_dep_delay_min"] = pairs["DEP_DELAY_NEW_j"]
 
-thresholds = [15, 30, 45, 60, 90]
+thresholds = [15, 45, 90]
 
 for t in thresholds:
     pairs[f"target_delay_gt_{t}"] = (pairs["downstream_dep_delay_min"] > t).astype(int)
