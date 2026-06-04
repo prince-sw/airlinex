@@ -340,9 +340,9 @@ pairs = pairs.rename(columns={
     "DAY_OF_MONTH_i":         "day_of_month",
     "DAY_OF_WEEK_i":          "day_of_week",
     # Distance / elapsed time
+    # DISTANCE_GROUP_j excluded: binned version of distance_j, not used as a feature.
     "DISTANCE_i":             "distance_i",
     "DISTANCE_j":             "distance_j",
-    "DISTANCE_GROUP_j":       "distance_group_j",
     "CRS_ELAPSED_TIME_i":     "crs_elapsed_time_i",
     "CRS_ELAPSED_TIME_j":     "crs_elapsed_time_j",
 })
